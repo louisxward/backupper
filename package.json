@@ -1,0 +1,20 @@
+{
+  "name": "Backupper",
+  "version": "0.1.0",
+  "description": "Back it up twin",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js | pino-pretty"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1400.0",
+    "archiver": "^5.3.1",
+    "dotenv": "^16.4.5",
+    "node-cron": "^4.0.7",
+    "pino": "^9.5.0",
+    "pino-pretty": "^13.0.0"
+  },
+  "engines": {
+    "node": ">=12"
+  }
+}

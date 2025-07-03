@@ -1,27 +1,39 @@
-# ChowBot
+# Backupper
 
-Version: 0.2.0
-
-Publisher: ChowIndustries
-
-Source: https://discordjs.guide
+Version: 0.1.0
 
 ## Environment(.env place in root)
 
 ```
-TOKEN=<BOT_API_KEY>
-CLIENT_ID=<BOT_USER_ID>
-GUILD_ID=<SERVER_ID>
+ACCESS_KEY=
+SECRET_KEY=
+ENDPOINT=
+REGION=
+FORCE_PATH_STYLE=
+```
+
+## Config(.env place in root/data)
+
+```
+{
+  "backups": [
+    {
+      "directory": "",
+      "bucket": "",
+      "prefix": "",
+      "maxBackupCount": ,
+      "sizeCheck": ,
+      "isZip":
+    },
+}
 ```
 
 ## Commands
 
-`npm run dev` - dev command restarts on save
+`npm start` - dev command restarts on save
 
 `docker compose build` - prod build
 
 `docker compose up -d` - prod deploy
 
 `docker compose logs -f` - prod logs
-
-`node deploy-commands.js` - deploy commands to all servers or just one

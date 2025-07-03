@@ -77,7 +77,7 @@ async function enforceRetention(bucket, prefix, maxBackups) {
     };
     const res = await s3.deleteObjects(delParams).promise();
     if (res.Errors && res.Errors.length) {
-      console.error("Errors deleting some object versions:", res.Errors);
+      logger.error("Errors deleting some object versions:", res.Errors);
     }
   }
 }
@@ -93,7 +93,7 @@ async function getLatestBackupSize(bucket, prefix) {
 async function backup() {
   for (const entry of config.backups) {
     const { directory: src, bucket, prefix, maxBackupCount = 7, sizeCheck = false, isZip = false } = entry;
-    console.log(`Processing ${isZip ? "zip-dir" : "dir"} ${src}`);
+    logger.info(`Processing ${isZip ? "zip-dir" : "dir"} ${src}`);
     let zipPath;
     let newSize;
     let isTemp = false;
@@ -101,7 +101,7 @@ async function backup() {
       const files = await readdir(src);
       const zips = files.filter((f) => f.toLowerCase().endsWith(".zip"));
       if (!zips.length) {
-        console.error(`No .zip files found in ${src}, skipping.`);
+        logger.error(`No .zip files found in ${src}, skipping.`);
         continue;
       }
       let latestFile = null;
@@ -116,39 +116,39 @@ async function backup() {
       }
       zipPath = latestFile;
       newSize = (await stat(zipPath)).size;
-      console.log(`Using latest zip ${zipPath} (${newSize} bytes).`);
+      logger.info(`Using latest zip ${zipPath} (${newSize} bytes).`);
     } else {
       const timestamp = new Date().toISOString().replace(/[:\.]/g, "-");
       const filename = `${path.basename(src)}-${timestamp}.zip`;
       zipPath = path.join(require("os").tmpdir(), filename);
-      console.log(`Zipping ${src} → ${zipPath}...`);
+      logger.info(`Zipping ${src} -> ${zipPath}...`);
       newSize = await zipDirectory(src, zipPath);
-      console.log(`Zipped ${newSize} bytes.`);
+      logger.info(`Zipped ${newSize} bytes.`);
       isTemp = true;
     }
     if (sizeCheck) {
       const prevSize = await getLatestBackupSize(bucket, prefix);
       if (newSize <= prevSize) {
-        console.log(`Skip upload: new (${newSize}) ≤ prev (${prevSize}).`);
+        logger.info(`Skip upload: new (${newSize}) <= prev (${prevSize}).`);
         if (isTemp) fs.unlinkSync(zipPath);
         continue;
       }
     }
     const key = `${prefix}/${path.basename(zipPath)}`;
-    console.log(`Uploading to s3://${bucket}/${key}...`);
+    logger.info(`Uploading to s3://${bucket}/${key}...`);
     await s3.upload({ Bucket: bucket, Key: key, Body: fs.createReadStream(zipPath) }).promise();
-    console.log(`Upload complete.`);
+    logger.info(`Upload complete.`);
     if (isTemp) {
       fs.unlinkSync(zipPath);
-      console.log(`Removed temp file.`);
+      logger.info(`Removed temp file.`);
     }
-    console.log(`Enforcing retention (keep ${maxBackupCount})…`);
+    logger.info(`Enforcing retention (keep ${maxBackupCount})...`);
     await enforceRetention(bucket, prefix, maxBackupCount);
-    console.log(`Retention applied.`);
+    logger.info(`Retention applied.`);
   }
 }
 
 backup().catch((err) => {
-  console.error("Backup failed:", err);
+  logger.error("Backup failed:", err);
   process.exit(1);
 });

@@ -1,20 +1,28 @@
+require("dotenv").config();
+
 const fs = require("fs");
 const path = require("path");
 const util = require("util");
 const archiver = require("archiver");
 const AWS = require("aws-sdk");
+const pino = require("pino");
 
 const readdir = util.promisify(fs.readdir);
 const stat = util.promisify(fs.stat);
 
+const transport = pino.transport({
+  targets: [{ target: "pino-pretty" }, { target: "pino/file", options: { destination: "backupper.log" } }]
+});
+const logger = pino(transport);
+
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, "/data/config.json"), "utf-8"));
 
 const s3Config = {
-  endpoint: config.aws.endpoint,
-  region: config.aws.region,
-  accessKeyId: config.aws.accessKeyId,
-  secretAccessKey: config.aws.secretAccessKey,
-  s3ForcePathStyle: config.aws.s3ForcePathStyle || true
+  endpoint: process.env.ENDPOINT,
+  region: process.env.REGION,
+  accessKeyId: process.env.ACCESS_KEY,
+  secretAccessKey: process.env.SECRET_KEY,
+  s3ForcePathStyle: process.env.FORCE_PATH_STYLE === "true"
 };
 const s3 = new AWS.S3(s3Config);
 

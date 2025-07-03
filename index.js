@@ -92,7 +92,7 @@ async function getLatestBackupSize(bucket, prefix) {
 
 async function backup() {
   for (const entry of config.backups) {
-    const { directory: src, bucket, prefix, maxBackupCount = 7, mbCheck = false, isZip = false } = entry;
+    const { directory: src, bucket, prefix, maxBackupCount = 7, sizeCheck = false, isZip = false } = entry;
     console.log(`Processing ${isZip ? "zip-dir" : "dir"} ${src}`);
     let zipPath;
     let newSize;
@@ -126,7 +126,7 @@ async function backup() {
       console.log(`Zipped ${newSize} bytes.`);
       isTemp = true;
     }
-    if (mbCheck) {
+    if (sizeCheck) {
       const prevSize = await getLatestBackupSize(bucket, prefix);
       if (newSize <= prevSize) {
         console.log(`Skip upload: new (${newSize}) ≤ prev (${prevSize}).`);

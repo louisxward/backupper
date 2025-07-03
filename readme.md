@@ -37,3 +37,8 @@ FORCE_PATH_STYLE=
 `docker compose up -d` - prod deploy
 
 `docker compose logs -f` - prod logs
+
+## ToDo
+
+Timer
+Commands for manual

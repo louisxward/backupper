@@ -1,0 +1,5 @@
+services:
+  backupper:
+    container_name: backupper
+    restart: unless-stopped
+    build: .

@@ -67,6 +67,7 @@ async function enforceRetention(bucket, prefix, maxBackups) {
   if (fileVersions.length <= maxBackups) return;
   fileVersions.sort((a, b) => new Date(a.LastModified) - new Date(b.LastModified));
   const toDelete = fileVersions.slice(0, fileVersions.length - maxBackups);
+  logger.info(`toDelete length ${toDelete.length}`);
   for (let i = 0; i < toDelete.length; i += 1000) {
     const chunk = toDelete.slice(i, i + 1000);
     const delParams = {
@@ -93,6 +94,7 @@ async function getLatestBackupSize(bucket, prefix) {
 async function backup() {
   for (const entry of config.backups) {
     const { directory: src, bucket, prefix, maxBackupCount = 7, sizeCheck = false, isZip = false } = entry;
+    logger.info("---");
     logger.info(`Processing ${isZip ? "zip-dir" : "dir"} ${src}`);
     let zipPath;
     let newSize;
@@ -127,6 +129,7 @@ async function backup() {
       isTemp = true;
     }
     if (sizeCheck) {
+      logger.info("size check");
       const prevSize = await getLatestBackupSize(bucket, prefix);
       if (newSize <= prevSize) {
         logger.info(`Skip upload: new (${newSize}) <= prev (${prevSize}).`);
@@ -144,7 +147,6 @@ async function backup() {
     }
     logger.info(`Enforcing retention (keep ${maxBackupCount})...`);
     await enforceRetention(bucket, prefix, maxBackupCount);
-    logger.info(`Retention applied.`);
   }
 }
 

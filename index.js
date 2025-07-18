@@ -137,6 +137,9 @@ async function backup() {
         continue;
       }
     }
+    logger.info(`Enforcing retention (keep ${maxBackupCount})...`);
+    // -1 to make way for current upload
+    await enforceRetention(bucket, prefix, maxBackupCount - 1);
     const key = `${prefix}/${path.basename(zipPath)}`;
     logger.info(`Uploading to s3://${bucket}/${key}...`);
     await s3.upload({ Bucket: bucket, Key: key, Body: fs.createReadStream(zipPath) }).promise();
@@ -145,8 +148,6 @@ async function backup() {
       fs.unlinkSync(zipPath);
       logger.info(`Removed temp file.`);
     }
-    logger.info(`Enforcing retention (keep ${maxBackupCount})...`);
-    await enforceRetention(bucket, prefix, maxBackupCount);
   }
 }
 

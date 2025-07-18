@@ -3,3 +3,5 @@ services:
     container_name: backupper
     restart: unless-stopped
     build: .
+    volumes:
+      - /var/log/backupper.log:/app/backupper.log

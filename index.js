@@ -6,6 +6,7 @@ const util = require("util");
 const archiver = require("archiver");
 const AWS = require("aws-sdk");
 const pino = require("pino");
+const cron = require("node-cron");
 
 const readdir = util.promisify(fs.readdir);
 const stat = util.promisify(fs.stat);
@@ -91,67 +92,82 @@ async function getLatestBackupSize(bucket, prefix) {
   return latest.Size;
 }
 
-async function backup() {
+async function backup(entry) {
+  const { src, bucket, prefix, maxBackupCount = 7, sizeCheck = false, isZip = false } = entry;
+  logger.info("---");
+  logger.info(`Processing ${isZip ? "zip-dir" : "dir"} ${src}`);
+  let zipPath;
+  let newSize;
+  let isTemp = false;
+  if (isZip) {
+    const files = await readdir(src);
+    const zips = files.filter((f) => f.toLowerCase().endsWith(".zip"));
+    if (!zips.length) {
+      logger.error(`No .zip files found in ${src}, skipping.`);
+      return;
+    }
+    let latestFile = null;
+    let latestMtime = 0;
+    for (const f of zips) {
+      const full = path.join(src, f);
+      const stats = await stat(full);
+      if (stats.mtimeMs > latestMtime) {
+        latestMtime = stats.mtimeMs;
+        latestFile = full;
+      }
+    }
+    zipPath = latestFile;
+    newSize = (await stat(zipPath)).size;
+    logger.info(`Using latest zip ${zipPath} (${newSize} bytes).`);
+  } else {
+    const timestamp = new Date().toISOString().replace(/[:\.]/g, "-");
+    const filename = `${path.basename(src)}-${timestamp}.zip`;
+    zipPath = path.join(require("os").tmpdir(), filename);
+    logger.info(`Zipping ${src} -> ${zipPath}...`);
+    newSize = await zipDirectory(src, zipPath);
+    logger.info(`Zipped ${newSize} bytes.`);
+    isTemp = true;
+  }
+  if (sizeCheck) {
+    logger.info("size check");
+    const prevSize = await getLatestBackupSize(bucket, prefix);
+    if (newSize <= prevSize) {
+      logger.info(`Skip upload: new (${newSize}) <= prev (${prevSize}).`);
+      if (isTemp) fs.unlinkSync(zipPath);
+      return;
+    }
+  }
+  logger.info(`Enforcing retention (keep ${maxBackupCount})...`);
+  // -1 to make way for current upload
+  await enforceRetention(bucket, prefix, maxBackupCount - 1);
+  const key = `${prefix}/${path.basename(zipPath)}`;
+  logger.info(`Uploading to s3://${bucket}/${key}...`);
+  await s3.upload({ Bucket: bucket, Key: key, Body: fs.createReadStream(zipPath) }).promise();
+  logger.info(`Upload complete.`);
+  if (isTemp) {
+    fs.unlinkSync(zipPath);
+    logger.info(`Removed temp file.`);
+  }
+}
+
+async function start() {
   for (const entry of config.backups) {
-    const { directory: src, bucket, prefix, maxBackupCount = 7, sizeCheck = false, isZip = false } = entry;
-    logger.info("---");
-    logger.info(`Processing ${isZip ? "zip-dir" : "dir"} ${src}`);
-    let zipPath;
-    let newSize;
-    let isTemp = false;
-    if (isZip) {
-      const files = await readdir(src);
-      const zips = files.filter((f) => f.toLowerCase().endsWith(".zip"));
-      if (!zips.length) {
-        logger.error(`No .zip files found in ${src}, skipping.`);
-        continue;
-      }
-      let latestFile = null;
-      let latestMtime = 0;
-      for (const f of zips) {
-        const full = path.join(src, f);
-        const stats = await stat(full);
-        if (stats.mtimeMs > latestMtime) {
-          latestMtime = stats.mtimeMs;
-          latestFile = full;
+    const schedule = entry.schedule;
+    const src = entry.src;
+    if (cron.validate(schedule)) {
+      cron.schedule(schedule, async () => {
+        try {
+          await backup(entry);
+        } catch (error) {
+          logger.error(`Scheduled "${src}" failed`);
+          logger.error(error);
         }
-      }
-      zipPath = latestFile;
-      newSize = (await stat(zipPath)).size;
-      logger.info(`Using latest zip ${zipPath} (${newSize} bytes).`);
+      });
+      logger.info(`Scheduled "${src}" with cron: ${schedule}`);
     } else {
-      const timestamp = new Date().toISOString().replace(/[:\.]/g, "-");
-      const filename = `${path.basename(src)}-${timestamp}.zip`;
-      zipPath = path.join(require("os").tmpdir(), filename);
-      logger.info(`Zipping ${src} -> ${zipPath}...`);
-      newSize = await zipDirectory(src, zipPath);
-      logger.info(`Zipped ${newSize} bytes.`);
-      isTemp = true;
-    }
-    if (sizeCheck) {
-      logger.info("size check");
-      const prevSize = await getLatestBackupSize(bucket, prefix);
-      if (newSize <= prevSize) {
-        logger.info(`Skip upload: new (${newSize}) <= prev (${prevSize}).`);
-        if (isTemp) fs.unlinkSync(zipPath);
-        continue;
-      }
-    }
-    logger.info(`Enforcing retention (keep ${maxBackupCount})...`);
-    // -1 to make way for current upload
-    await enforceRetention(bucket, prefix, maxBackupCount - 1);
-    const key = `${prefix}/${path.basename(zipPath)}`;
-    logger.info(`Uploading to s3://${bucket}/${key}...`);
-    await s3.upload({ Bucket: bucket, Key: key, Body: fs.createReadStream(zipPath) }).promise();
-    logger.info(`Upload complete.`);
-    if (isTemp) {
-      fs.unlinkSync(zipPath);
-      logger.info(`Removed temp file.`);
+      logger.warn(`Invalid cron expression for "${src}": ${schedule}`);
     }
   }
 }
 
-backup().catch((err) => {
-  logger.error("Backup failed:", err);
-  process.exit(1);
-});
+start();

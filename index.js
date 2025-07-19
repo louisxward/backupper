@@ -153,21 +153,23 @@ async function backup(entry) {
 async function start() {
   for (const entry of config.backups) {
     const schedule = entry.schedule;
-    const src = entry.src;
+    const jobName = entry.jobName;
     if (cron.validate(schedule)) {
       cron.schedule(schedule, async () => {
         try {
           await backup(entry);
         } catch (error) {
-          logger.error(`Scheduled "${src}" failed`);
+          logger.error(`Scheduled "${jobName}" failed`);
           logger.error(error);
         }
       });
-      logger.info(`Scheduled "${src}" with cron: ${schedule}`);
+      logger.info(`Scheduled "${jobName}" with cron: ${schedule}`);
     } else {
-      logger.warn(`Invalid cron expression for "${src}": ${schedule}`);
+      logger.warn(`Invalid cron expression for "${jobName}": ${schedule}`);
     }
   }
 }
 
-start();
+start().catch((error) => {
+  logger.error("Backup failed:", error);
+});

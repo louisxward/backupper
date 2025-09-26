@@ -96,6 +96,10 @@ async function backup(entry) {
   const { src, bucket, prefix, maxBackupCount = 7, sizeCheck = false, isZip = false } = entry;
   logger.info("---");
   logger.info(`Processing ${isZip ? "zip-dir" : "dir"} ${src}`);
+  if (!(await checkSource(src))) {
+    logger.info(`skipping ${src}`);
+    return;
+  }
   let zipPath;
   let newSize;
   let isTemp = false;
@@ -148,6 +152,32 @@ async function backup(entry) {
     fs.unlinkSync(zipPath);
     logger.info(`Removed temp file.`);
   }
+}
+
+async function checkSource(path) {
+  logger.info("checkSource");
+  try {
+    const stats = await fs.stat(path);
+    if (stats.isDirectory()) {
+      const files = await fs.readdir(path);
+      if (files.length === 0) {
+        logger.info(`${path} empty`);
+        return false;
+      }
+    } else if (stats.size === 0) {
+      logger.info(`${path} empty`);
+      return false;
+    }
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      logger.warn(`${path} does not exist`);
+      return false;
+    } else {
+      logger.error(`${path}  Error checking directory:`, error);
+      return false;
+    }
+  }
+  return true;
 }
 
 async function start() {

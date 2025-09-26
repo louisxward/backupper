@@ -4,5 +4,8 @@ services:
     restart: unless-stopped
     build: .
     volumes:
-      - /opt/data/backupper:/app/data
-      - /var/log/backupper.log:/app/backupper.log
+      # - /opt/data/backupper:/app/data
+      # - /var/log/backupper.log:/app/backupper.log
+
+      - ./data:/app/data
+      - ./backupper.log:/app/backupper.log

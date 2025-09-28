@@ -157,7 +157,7 @@ async function backup(entry) {
 async function checkSource(path) {
   logger.info("checkSource", path);
   try {
-    const stats = await stat(path); // throws ENOENT if path doesn’t exist
+    const stats = await stat(path);
     if (stats.isDirectory()) {
       const files = await readdir(path);
       if (files.length === 0) {
@@ -169,7 +169,7 @@ async function checkSource(path) {
       return false;
     }
   } catch (error) {
-    logger.warn("CAUGHT ERROR:", error.code, error.message);
+    logger.warn(error);
     return false;
   }
   return true;

@@ -217,6 +217,9 @@ async function backup(entry) {
 }
 
 // ---------- scheduler ----------
+
+const runningJobs = new Set();
+
 async function start() {
   for (const entry of config.backups) {
     const { schedule, jobName } = entry;
@@ -228,11 +231,18 @@ async function start() {
     }
 
     cron.schedule(schedule, async () => {
-      try {
-        await backup(entry);
-      } catch (error) {
-        log.error(`Scheduled "${jobName}" failed`);
-        log.error(error);
+      if (!runningJobs.has(jobName)) {
+        runningJobs.add(jobName);
+        try {
+          await backup(entry);
+        } catch (error) {
+          log.error(`Scheduled "${jobName}" failed`);
+          log.error(error);
+        } finally {
+          runningJobs.delete(jobName);
+        }
+      } else {
+        log.warn("job already running: " + jobName);
       }
     });
 

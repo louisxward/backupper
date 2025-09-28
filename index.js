@@ -155,11 +155,11 @@ async function backup(entry) {
 }
 
 async function checkSource(path) {
-  logger.info("checkSource");
+  logger.info("checkSource", path);
   try {
-    const stats = await fs.stat(path);
+    const stats = await stat(path); // throws ENOENT if path doesn’t exist
     if (stats.isDirectory()) {
-      const files = await fs.readdir(path);
+      const files = await readdir(path);
       if (files.length === 0) {
         logger.info(`${path} empty`);
         return false;
@@ -169,13 +169,8 @@ async function checkSource(path) {
       return false;
     }
   } catch (error) {
-    if (error.code === "ENOENT") {
-      logger.warn(`${path} does not exist`);
-      return false;
-    } else {
-      logger.error(`${path}  Error checking directory:`, error);
-      return false;
-    }
+    logger.warn("CAUGHT ERROR:", error.code, error.message);
+    return false;
   }
   return true;
 }

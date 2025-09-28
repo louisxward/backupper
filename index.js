@@ -40,6 +40,30 @@ async function zipDirectory(sourceDir, outPath) {
   });
 }
 
+let shuttingDown = false;
+function shutdown(signal) {
+  logger.info(`Received ${signal}. Shutting down...`);
+  shuttingDown = true;
+  s3.config.httpOptions.agent.destroy();
+
+  try {
+    if (fs.existsSync(tempDir)) {
+      fs.readdirSync(tempDir).forEach((file) => {
+        const filePath = path.join(tempDir, file);
+        fs.unlinkSync(filePath);
+      });
+      console.log("Temp files deleted.");
+    }
+  } catch (err) {
+    console.error("Error cleaning temp files:", err);
+  }
+
+  process.exit(0);
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+
 async function listAllVersions(bucket, prefix) {
   let KeyMarker, VersionIdMarker;
   const versions = [];
@@ -84,7 +108,6 @@ async function enforceRetention(bucket, prefix, maxBackups, log) {
         Delete: { Objects: chunk.map((item) => ({ Key: item.Key, VersionId: item.VersionId })) }
       })
       .promise();
-
     if (res.Errors && res.Errors.length) {
       log.error("Errors deleting some object versions:", res.Errors);
     }
@@ -152,7 +175,7 @@ async function useExistingZip(src, log) {
 async function createNewZip(src, log) {
   const timestamp = new Date().toISOString().replace(/[:\.]/g, "-");
   const filename = `${path.basename(src)}-${timestamp}.zip`;
-  const zipPath = path.join(require("os").tmpdir(), filename);
+  const zipPath = path.join(require("os").tmpdir(), "", filename);
 
   log.info(`Zipping ${src} -> ${zipPath}...`);
   const size = await zipDirectory(src, zipPath);
@@ -231,6 +254,9 @@ async function start() {
     }
 
     cron.schedule(schedule, async () => {
+      if (shuttingDown) {
+        return;
+      }
       if (!runningJobs.has(jobName)) {
         runningJobs.add(jobName);
         try {

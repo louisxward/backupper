@@ -62,7 +62,7 @@ async function listAllVersions(bucket, prefix) {
   return versions;
 }
 
-async function enforceRetention(bucket, prefix, maxBackups) {
+async function enforceRetention(bucket, prefix, maxBackups, log) {
   const allVersions = await listAllVersions(bucket, prefix);
   const fileVersions = allVersions.filter((v) => {
     if (!v.Key.startsWith(`${prefix}/`) || !v.VersionId || v.IsDeleteMarker) return false;
@@ -74,7 +74,7 @@ async function enforceRetention(bucket, prefix, maxBackups) {
 
   fileVersions.sort((a, b) => new Date(a.LastModified) - new Date(b.LastModified));
   const toDelete = fileVersions.slice(0, fileVersions.length - maxBackups);
-  logger.info(`toDelete length ${toDelete.length}`);
+  log.info(`toDelete length ${toDelete.length}`);
 
   for (let i = 0; i < toDelete.length; i += 1000) {
     const chunk = toDelete.slice(i, i + 1000);
@@ -86,7 +86,7 @@ async function enforceRetention(bucket, prefix, maxBackups) {
       .promise();
 
     if (res.Errors && res.Errors.length) {
-      logger.error("Errors deleting some object versions:", res.Errors);
+      log.error("Errors deleting some object versions:", res.Errors);
     }
   }
 }
@@ -99,33 +99,33 @@ async function getLatestBackupSize(bucket, prefix) {
   return latest.Size;
 }
 
-async function checkSource(srcPath) {
-  logger.info("checkSource", srcPath);
+async function checkSource(srcPath, log) {
+  log.info("checkSource", srcPath);
   try {
     const stats = await stat(srcPath);
     if (stats.isDirectory()) {
       const files = await readdir(srcPath);
       if (!files.length) {
-        logger.info(`${srcPath} empty`);
+        log.info(`${srcPath} empty`);
         return false;
       }
     } else if (stats.size === 0) {
-      logger.info(`${srcPath} empty`);
+      log.info(`${srcPath} empty`);
       return false;
     }
   } catch (error) {
-    if (error.code !== "ENOENT") logger.warn(error);
+    if (error.code !== "ENOENT") log.warn(error);
     return false;
   }
   return true;
 }
 
 // ---------- backup logic ----------
-async function prepareBackupSource(src, isZip) {
-  return isZip ? useExistingZip(src) : createNewZip(src);
+async function prepareBackupSource(src, isZip, log) {
+  return isZip ? useExistingZip(src, log) : createNewZip(src, log);
 }
 
-async function useExistingZip(src) {
+async function useExistingZip(src, log) {
   const files = await readdir(src);
   const zips = files.filter((f) => f.toLowerCase().endsWith(".zip"));
   if (!zips.length) {
@@ -145,35 +145,35 @@ async function useExistingZip(src) {
   }
 
   const size = (await stat(latestFile)).size;
-  logger.info(`Using latest zip ${latestFile} (${size} bytes).`);
+  log.info(`Using latest zip ${latestFile} (${size} bytes).`);
   return { zipPath: latestFile, newSize: size, isTemp: false };
 }
 
-async function createNewZip(src) {
+async function createNewZip(src, log) {
   const timestamp = new Date().toISOString().replace(/[:\.]/g, "-");
   const filename = `${path.basename(src)}-${timestamp}.zip`;
   const zipPath = path.join(require("os").tmpdir(), filename);
 
-  logger.info(`Zipping ${src} -> ${zipPath}...`);
+  log.info(`Zipping ${src} -> ${zipPath}...`);
   const size = await zipDirectory(src, zipPath);
-  logger.info(`Zipped ${size} bytes.`);
+  log.info(`Zipped ${size} bytes.`);
 
   return { zipPath, newSize: size, isTemp: true };
 }
 
-async function shouldUpload(bucket, prefix, newSize) {
-  logger.info("size check");
+async function shouldUpload(bucket, prefix, newSize, log) {
+  log.info("size check");
   const prevSize = await getLatestBackupSize(bucket, prefix);
   if (newSize <= prevSize) {
-    logger.info(`Skip upload: new (${newSize}) <= prev (${prevSize}).`);
+    log.info(`Skip upload: new (${newSize}) <= prev (${prevSize}).`);
     return false;
   }
   return true;
 }
 
-async function uploadBackup(bucket, prefix, zipPath) {
+async function uploadBackup(bucket, prefix, zipPath, log) {
   const key = `${prefix}/${path.basename(zipPath)}`;
-  logger.info(`Uploading to s3://${bucket}/${key}...`);
+  log.info(`Uploading to s3://${bucket}/${key}...`);
 
   await s3
     .upload({
@@ -183,35 +183,35 @@ async function uploadBackup(bucket, prefix, zipPath) {
     })
     .promise();
 
-  logger.info("Upload complete.");
+  log.info("Upload complete.");
 }
 
 // ---------- main entry ----------
 async function backup(entry) {
-  const { src, bucket, prefix, maxBackupCount = 7, sizeCheck = false, isZip = false } = entry;
+  const { src, bucket, prefix, maxBackupCount = 7, sizeCheck = false, isZip = false, jobName } = entry;
+  const log = logger.child({ jobName });
 
-  logger.info("---");
-  logger.info(`Processing ${isZip ? "zip-dir" : "dir"} ${src}`);
+  log.info(`Start Processing ${isZip ? "zip-dir" : "dir"} ${src}`);
 
-  if (!(await checkSource(src))) {
-    logger.info(`Skipping ${src}`);
+  if (!(await checkSource(src, log))) {
+    log.info(`Skipping ${src}`);
     return;
   }
 
-  const { zipPath, newSize, isTemp } = await prepareBackupSource(src, isZip);
+  const { zipPath, newSize, isTemp } = await prepareBackupSource(src, isZip, log);
 
   try {
-    if (sizeCheck && !(await shouldUpload(bucket, prefix, newSize))) return;
+    if (sizeCheck && !(await shouldUpload(bucket, prefix, newSize, log))) return;
 
-    await enforceRetention(bucket, prefix, maxBackupCount - 1);
-    await uploadBackup(bucket, prefix, zipPath);
-  } catch (err) {
-    logger.error(err.message);
-    throw err;
+    await enforceRetention(bucket, prefix, maxBackupCount - 1, log);
+    await uploadBackup(bucket, prefix, zipPath, log);
+  } catch (error) {
+    log.error(error.message);
+    throw error;
   } finally {
     if (isTemp && fs.existsSync(zipPath)) {
       fs.unlinkSync(zipPath);
-      logger.info("Removed temp file.");
+      log.info("Removed temp file.");
     }
   }
 }
@@ -220,9 +220,10 @@ async function backup(entry) {
 async function start() {
   for (const entry of config.backups) {
     const { schedule, jobName } = entry;
+    const log = logger.child({ jobName });
 
     if (!cron.validate(schedule)) {
-      logger.warn(`Invalid cron expression for "${jobName}": ${schedule}`);
+      log.warn(`Invalid cron expression for "${jobName}": ${schedule}`);
       continue;
     }
 
@@ -230,12 +231,12 @@ async function start() {
       try {
         await backup(entry);
       } catch (error) {
-        logger.error(`Scheduled "${jobName}" failed`);
-        logger.error(error);
+        log.error(`Scheduled "${jobName}" failed`);
+        log.error(error);
       }
     });
 
-    logger.info(`Scheduled "${jobName}" with cron: ${schedule}`);
+    log.info(`Scheduled "${jobName}" with cron: ${schedule}`);
   }
 }
 

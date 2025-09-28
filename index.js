@@ -100,7 +100,7 @@ async function getLatestBackupSize(bucket, prefix) {
 }
 
 async function checkSource(srcPath, log) {
-  log.info("checkSource", srcPath);
+  log.info("checkSource src: " + srcPath);
   try {
     const stats = await stat(srcPath);
     if (stats.isDirectory()) {
@@ -183,7 +183,7 @@ async function uploadBackup(bucket, prefix, zipPath, log) {
     })
     .promise();
 
-  log.info("Upload complete.");
+  log.info("Upload complete prefix: " + prefix);
 }
 
 // ---------- main entry ----------
